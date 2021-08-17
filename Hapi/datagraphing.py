@@ -10,12 +10,16 @@ import random
 import numpy as np
 import pandas as pd
 import scipy.stats as scistat
+import hydroeval as he
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
 import gdal
 from datetime import datetime, timedelta
 import calendar
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.colors as colors
+from matplotlib import cm
 import matplotlib.patches as mpatches
 import matplotlib.animation as animation
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -223,6 +227,21 @@ def ModelResultsGraphing(variable, variable_unit, db_observed, obs_sheet, coor_s
         station = coordinates[(coordinates[['cell_row','cell_col']].values == calib_point).all(axis=1)].index[0]
         y_data_obs = obs_data[[station]]
         plt.plot(x, y_data_obs, label='Observed', color='C0')
+        
+        df = pd.DataFrame()
+        df['obs'] = list(y_data_obs.to_numpy().ravel())
+        df['sim'] = [*y_calib_data, *y_valid_data]
+        df = df.dropna()
+        
+        rmse = mean_squared_error(df['obs'], df['sim'], squared=False)
+        nse = he.evaluator(he.nse, df['sim'], df['obs'])
+        mae = mean_absolute_error(df['obs'], df['sim'])
+        r = np.corrcoef(df['obs'], df['sim'])[0, 1]
+        print("RMSE r" + str(row) + "_c" + str(column) + ": " + str(rmse))
+        print("NSE r" + str(row) + "_c" + str(column) + ": " + str(nse))
+        print("MAE r" + str(row) + "_c" + str(column) + ": " + str(mae))
+        print("Cor r" + str(row) + "_c" + str(column) + ": " + str(r))
+
        
     locator = mdates.YearLocator()
     fmt = mdates.DateFormatter('%Y')
@@ -246,6 +265,55 @@ def ModelResultsGraphing(variable, variable_unit, db_observed, obs_sheet, coor_s
         plt.savefig(dst_path + "Graph_analysis_Model_results_" + variable + "_r" + str(row) + "_c" + str(column) + ".pdf", dpi=dpi, bbox_inches='tight')
     
     plt.show
+    
+def MonthlyDataGraphing(variable, dbs_path, row, column, value=0, dst_path=None, dpi=600):
+    
+    with open(dbs_path, 'rb') as handle:
+        db = pickle.load(handle)
+                
+    months = [i for i in range(12)]
+    
+    plt.figure(figsize=(10,5))    
+        
+    monthly_value = []
+    
+    for month in months:
+        monthly_arr = []
+        months_num_arr = [i for i in range(month, db['data'].shape[2], 12)]
+        for m in months_num_arr:
+            monthly_arr.append(db['data'][row, column, m])
+        if value == 0:
+            monthly_value.append(np.mean(monthly_arr))
+        if value == 1:
+            monthly_value.append(np.min(monthly_arr))
+        if value == 2:
+            monthly_value.append(np.max(monthly_arr))
+
+    month_text = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
+    
+    plt.bar(months, monthly_value)
+    plt.xticks(np.arange(12), month_text)
+    
+    print_variable = variable.title().replace("_"," ")
+    plt.ylabel(print_variable + ' [m3/s]', fontdict=None, labelpad=None)
+    plt.xlabel('Month', fontdict=None, labelpad=None)
+    if value == 0:
+        plt.title('Average monthly ' + print_variable + " in cell r" + str(row) + "c" + str(column), pad=30, fontsize=20)
+    if value == 1:
+        plt.title('Monthly minimum ' + print_variable + " in cell r" + str(row) + "c" + str(column), pad=30, fontsize=20)
+    if value == 2:
+        plt.title('Monthly maximum ' + print_variable + " in cell r" + str(row) + "c" + str(column), pad=30, fontsize=20)
+    
+    if dst_path != None:
+        if value == 0:
+            plt.savefig(dst_path + "Graph_analysis_Average_monthly_" + variable + "_r" + str(row) + "c" + str(column) + ".pdf", dpi=dpi, bbox_inches='tight')
+        if value == 1:
+            plt.savefig(dst_path + "Graph_analysis_Monthly_minimum_" + variable + "_r" + str(row) + "c" + str(column) + ".pdf", dpi=dpi, bbox_inches='tight')
+        if value == 2:
+            plt.savefig(dst_path + "Graph_analysis_Monthly_maximum_" + variable + "_r" + str(row) + "c" + str(column) + ".pdf", dpi=dpi, bbox_inches='tight')
+
+    plt.show()
+
 
 def PDAGraphing(variable, percentiles, dbs_path, analysis_names, start_date=None, end_date=None, 
                 separated=0, dst_path=None, dpi=600):
@@ -446,7 +514,8 @@ def PDASDIGraphing(sdi, intervals, db_path, start_date=None, end_date=None,
             plt.title(title, pad=30, fontsize=20)
             plt.xlabel(xlabel, fontdict=None, labelpad=None)
             plt.ylabel(ylabel, fontdict=None, labelpad=None)
-        
+            
+          
             if dst_path != None:
                 plt.savefig(dst_path + "Graph_analysis_PDA_" + sdi + str(interval) + ".pdf", dpi=dpi, bbox_inches='tight')
             
@@ -524,9 +593,9 @@ def PDAThermalFloorsGraphing(variable, percentile, dbs_path, identifier, analysi
                 plt.legend()
                 if respect_to == 0:
                     if len(analysis_names) > 1:
-                        title = "Percentage Drought Area against cathment area (" + print_variable + ") (percentile " + str(percentile) + ")"
+                        title = "PDA against cathment area " + soil_type + " (" + print_variable + ") (percentile " + str(percentile) + ")"
                     else:
-                        title = "Percentage Drought Area against cathment area (" + print_variable + " - " + analysis + ") (percentile " + str(percentile) + ")"
+                        title = "PDA against cathment area " + soil_type + " (" + print_variable + " - " + analysis + ") (percentile " + str(percentile) + ")"
                 else:
                     if len(analysis_names) > 1:
                         title = "Percentage Drought Area " + soil_type + " (" + print_variable + ") (percentile " + str(percentile) + ")"
@@ -535,6 +604,8 @@ def PDAThermalFloorsGraphing(variable, percentile, dbs_path, identifier, analysi
                 
                 xlabel = "Year"
                 ylabel = "PDA [%]"
+                
+                print([sum(pda_arr), soil_type])
                 
                 plt.title(title, pad=30, fontsize=20)
                 plt.xlabel(xlabel, fontdict=None, labelpad=None)
@@ -618,35 +689,36 @@ def NCDAVsCDAGraphing(variable, percentile, analyses, db_files, reference_raster
     for date in date_generated:
         inner_arr = []
         for analysis, ax in zip(analyses, [ax1, ax2]):
-            if analysis == 'CDA':
+            if analysis == 'NCDA':
+                im = ax.imshow(dbs[analysis][date], interpolation=None, cmap = colors.ListedColormap(['C0', 'C3']))
+            else:
                 db_arr = np.array(db[date]['data'], dtype=np.float64)
                 db_arr[arr == noval] = np.nan
-                im = ax.imshow(db_arr, interpolation=None)
-                if date == start:
-                    ax.imshow(db_arr, interpolation=None)  # show an initial one first
-            else:
-                im = ax.imshow(dbs[analysis][date], interpolation=None, cmap = colors.ListedColormap(['C0', 'C3']))
-                if date == start:
-                    ax.imshow(dbs[analysis][date], interpolation=None, cmap = colors.ListedColormap(['C0', 'C3']))  # show an initial one first
+                im = ax.imshow(db_arr, interpolation=None)  
+                textstr = "Number of clusters: " + str(np.nanmax(db_arr).astype(int)) + "."
+                props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+                text_num_clusters = ax.text(0.3, 0.020, textstr, transform=ax.transAxes, fontsize=10,
+                                            verticalalignment='bottom', bbox=props)
+            
             title = ax.text(0.5, 1.03, analysis, size=15, 
                             # size=plt.rcParams["axes.titlesize"],
                             ha="center", transform=ax.transAxes, )
-            text_date = plt.text(0.8, 0.05, date.strftime("%d/%m/%Y"),
+            text_date = plt.text(0.81, 0.06, date.strftime("%d/%m/%Y"),
                                  transform=fig.transFigure)
             inner_arr.append(im)
             inner_arr.append(title)
             inner_arr.append(text_date)
-    
+        inner_arr.append(text_num_clusters)
+        
         ims.append(inner_arr)
     
-    red_patch = mpatches.Patch(color='C3', label='Drought')
-    blue_patch = mpatches.Patch(color='C0', label='No Drought')
+        red_patch = mpatches.Patch(color='C3', label='Drought')
+        blue_patch = mpatches.Patch(color='C0', label='No Drought')
+        ax1.legend(handles=[blue_patch, red_patch], loc = 'upper center', ncol=2,
+                  bbox_to_anchor=(0.5,-0.05))
     
     fig.tight_layout()
     plt.subplots_adjust(top=0.85)
-    
-    plt.legend(handles=[blue_patch, red_patch], loc = 'lower center', ncol=2,
-               bbox_to_anchor=(0.5,0.03), bbox_transform=fig.transFigure)
     plt.subplots_adjust(bottom=0.13)
     plt.suptitle(variable.title().replace("_", " "), fontweight ="bold", size=20, y=0.95)
     
@@ -655,6 +727,72 @@ def NCDAVsCDAGraphing(variable, percentile, analyses, db_files, reference_raster
     print_end = end.strftime("%d_%m_%Y")
     ani.save(dst_path + "Animation_NCDA_CDA_" + variable + "_perc" + str(percentile) + "_" + print_start + "_to_" + print_end + ".mp4", dpi=dpi)
     
+def NCDAVsCDASingleGraphing(variable, percentile, analyses, db_files, reference_raster, 
+                            start_date=None, end_date=None, dst_path=None, dpi=600):
+    
+    dbs = {}
+    
+    for db_file, analysis in zip(db_files, analyses):            
+        with open(db_file, 'rb') as handle:
+            db = pickle.load(handle)
+        dbs[analysis] = db
+        db_file = None
+    
+    if start_date == None and end_date == None:
+        start = min(dbs[analysis[0]].keys())
+        end = max(dbs[analysis[0]].keys())
+    else:
+        start = datetime.strptime(start_date, "%d-%m-%Y")
+        end = datetime.strptime(end_date, "%d-%m-%Y")
+    
+    date_generated = [start + timedelta(days=x) for x in range(0, (end-start).days + 1)]
+ 
+    raster = gdal.Open(reference_raster)
+    arr = raster.GetRasterBand(1).ReadAsArray()
+    noval = raster.GetRasterBand(1).GetNoDataValue()
+    
+    for date in date_generated:
+        fig, [ax1, ax2] = plt.subplots(1, 2, figsize=(7,7))
+        ax_list = fig.axes
+        ims = []
+        inner_arr = []
+        for analysis, ax in zip(analyses, [ax1, ax2]):
+            if analysis == 'CDA':
+                db_arr = np.array(db[date]['data'], dtype=np.float64)
+                db_arr[arr == noval] = np.nan
+                im = ax.imshow(db_arr, interpolation=None)  
+                textstr = "Number of clusters: " + str(np.nanmax(db_arr).astype(int)) + "."
+                props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+                ax_list[1].text(0.3, 0.020, textstr, transform=ax.transAxes, fontsize=10,
+                                verticalalignment='bottom', bbox=props)
+                
+            else:
+                im = ax.imshow(dbs[analysis][date], interpolation=None, cmap = colors.ListedColormap(['C0', 'C3']))
+                red_patch = mpatches.Patch(color='C3', label='Drought')
+                blue_patch = mpatches.Patch(color='C0', label='No Drought')
+                ax.legend(handles=[blue_patch, red_patch], loc = 'upper center', ncol=2,
+                          bbox_to_anchor=(0.5,-0.05))
+            title = ax.text(0.5, 1.03, analysis, size=15, 
+                            # size=plt.rcParams["axes.titlesize"],
+                            ha="center", transform=ax.transAxes, )
+            text_date = plt.text(0.81, 0.06, date.strftime("%d/%m/%Y"),
+                                 transform=fig.transFigure)
+            inner_arr.append(im)
+            inner_arr.append(title)
+            inner_arr.append(text_date)
+    
+        ims.append(inner_arr)
+    
+        fig.tight_layout()
+        plt.subplots_adjust(top=0.85)
+        plt.subplots_adjust(bottom=0.13)
+        plt.suptitle(variable.title().replace("_", " "), fontweight ="bold", size=20, y=0.95)
+        print_date = date.strftime("%d_%m_%Y")
+        
+        if dst_path != None:
+            plt.savefig(dst_path + "Graph _NCDA_CDA_" + variable + "_perc" + str(percentile) + "_" + print_date + ".pdf", dpi=dpi, bbox_inches='tight')
+        
+        plt.show()                
 
 def DroughtEventsNumberSDIGraphing(sdi_names, intervals, db_files, row, column, 
                                    dst_path=None, dpi=600):
@@ -763,6 +901,7 @@ def PDAMultiplePercentileGraphing(variable, percentiles, dbs_path, analysis_name
                 pda_arr.append(pda_i)
         
             areas.append(np.trapz(pda_arr))
+            # areas.append(sum(pda_arr))
             
         plt.plot(percentiles, areas, label='Accumulated DA - ' + analysis, color='C0', marker='.')
         # print(variable, percentiles, areas)
@@ -1227,7 +1366,7 @@ def RasterStatsGraphing(main_path, sdi_names, intervals, stat, reference_raster,
 
     plt.show()
 
-def RasterHorizontalGraphing(main_path, sdi, interval, db_path, date_range, reference_raster, 
+def RasterHorizontalGraphing(sdi, interval, db_path, date_range, reference_raster, 
                              colorbar=True, dst_path=None, dpi=600):
     
     with open(db_path, 'rb') as handle:
@@ -1300,68 +1439,201 @@ def RasterHorizontalGraphing(main_path, sdi, interval, db_path, date_range, refe
 
     plt.show()
 
-def NCDAVariablesComparisonGraphing(variable, percentile, analyses, db_files, reference_raster, 
-                                    start_date=None, end_date=None, dst_path=None, dpi=600):
+def SDIClassesAnimation(sdi, interval, db_path, reference_raster, colorbar=True,
+                        start_date=None, end_date=None, dst_path=None, dpi=600):
+        
+    with open(db_path, 'rb') as handle:
+        db = pickle.load(handle)
     
-    dbs = {}
+    start = db['start']
+    end = db['end']
     
-    for db_file, analysis in zip(db_files, analyses):            
-        with open(db_file, 'rb') as handle:
-            db = pickle.load(handle)
-        dbs[analysis] = db
-        db_file = None
+    initial = datetime.strptime(start_date, "%d-%m-%Y")
+    final = datetime.strptime(end_date, "%d-%m-%Y")
+    num_months = (initial.year - start.year) * 12 + (initial.month - start.month)
     
-    if start_date == None and end_date == None:
-        start = min(dbs[analysis[0]].keys())
-        end = max(dbs[analysis[0]].keys())
-    else:
-        start = datetime.strptime(start_date, "%d-%m-%Y")
-        end = datetime.strptime(end_date, "%d-%m-%Y")
-    
-    date_generated = [start + timedelta(days=x) for x in range(0, (end-start).days + 1)]
+    date_generated = pd.to_datetime(pd.date_range(str(initial.strftime("%Y-%m-%d")),str(final.strftime("%Y-%m-%d")), freq='MS'))
+    date_generated = [date_generated[i].date() for i in range(len(date_generated))]
     
     raster = gdal.Open(reference_raster)
     arr = raster.GetRasterBand(1).ReadAsArray()
     noval = raster.GetRasterBand(1).GetNoDataValue()
     
-    fig, [ax1, ax2] = plt.subplots(1, 2, figsize=(7,7))
+    fig, ax = plt.subplots(figsize=(5,7))
     ims = []
-    for date in date_generated:
-        inner_arr = []
-        for analysis, ax in zip(analyses, [ax1, ax2]):
-            if analysis == 'CDA':
-                db_arr = np.array(db[date]['data'], dtype=np.float64)
-                db_arr[arr == noval] = np.nan
-                im = ax.imshow(db_arr, interpolation=None)
-                if date == start:
-                    ax.imshow(db_arr, interpolation=None)  # show an initial one first
-            else:
-                im = ax.imshow(dbs[analysis][date], interpolation=None, cmap = colors.ListedColormap(['C0', 'C3']))
-                if date == start:
-                    ax.imshow(dbs[analysis][date], interpolation=None, cmap = colors.ListedColormap(['C0', 'C3']))  # show an initial one first
-            title = ax.text(0.5, 1.03, analysis, size=15, 
-                            # size=plt.rcParams["axes.titlesize"],
-                            ha="center", transform=ax.transAxes, )
-            text_date = plt.text(0.8, 0.05, date.strftime("%d/%m/%Y"),
-                                 transform=fig.transFigure)
-            inner_arr.append(im)
-            inner_arr.append(title)
-            inner_arr.append(text_date)
+        
+    inner_arr = []
+    for date, c in zip(date_generated, range(num_months, num_months + len(date_generated))):
+        inner_arr=[]
+        db[sdi][sdi + str(interval)][:,:,c][arr == noval] = np.nan
+        
+        im = ax.imshow(db[sdi][sdi + str(interval)][:,:,c], interpolation=None, 
+                       vmin=0-0.5, vmax=6+0.5, cmap=plt.get_cmap('YlOrRd_r', 6+1))
+        title = ax.text(0.5, 1.03, str(date.month) + "/" + str(date.year), size=8, 
+                        # size=plt.rcParams["axes.titlesize"],
+                        ha="center", transform=ax.transAxes, )
+        
+        inner_arr.append(im)
+        inner_arr.append(title)        
     
         ims.append(inner_arr)
-    
-    red_patch = mpatches.Patch(color='C3', label='Drought')
-    blue_patch = mpatches.Patch(color='C0', label='No Drought')
-    
-    fig.tight_layout()
+
+    fig.tight_layout()   
     plt.subplots_adjust(top=0.85)
     
-    plt.legend(handles=[blue_patch, red_patch], loc = 'lower center', ncol=2,
-               bbox_to_anchor=(0.5,0.03), bbox_transform=fig.transFigure)
-    plt.subplots_adjust(bottom=0.13)
-    plt.suptitle(variable.title().replace("_", " "), fontweight ="bold", size=20, y=0.95)
+    ax_list = fig.axes
+    fig.colorbar(im, ax=ax_list, orientation='vertical', ticks=np.arange(0, 7))
     
-    ani = animation.ArtistAnimation(fig, ims, interval=200, blit=True, repeat_delay=1000)
-    print_start = start.strftime("%d_%m_%Y")
-    print_end = end.strftime("%d_%m_%Y")
-    ani.save(dst_path + "Animation_NCDA_CDA_" + variable + "_perc" + percentile + "_" + print_start + "_to_" + print_end + ".mp4", dpi=dpi)
+    sup_title = "Drought classes - " +  sdi + str(interval)
+    plt.suptitle(sup_title, fontweight ="bold", size=20, y=0.95)
+    
+    ani = animation.ArtistAnimation(fig, ims, interval=400, blit=True, repeat_delay=1000)
+    print_start = initial.strftime("%d_%m_%Y")
+    print_end = final.strftime("%d_%m_%Y")
+    ani.save(dst_path + "Animation_" + sdi + str(interval) + "_classes_" + print_start + "_" + print_end + ".mp4", dpi=dpi)
+
+
+# def NCDAVariablesComparisonGraphing(variable, percentile, analyses, db_files, reference_raster, 
+#                                     start_date=None, end_date=None, dst_path=None, dpi=600):
+    
+#     dbs = {}
+    
+#     for db_file, analysis in zip(db_files, analyses):            
+#         with open(db_file, 'rb') as handle:
+#             db = pickle.load(handle)
+#         dbs[analysis] = db
+#         db_file = None
+    
+#     if start_date == None and end_date == None:
+#         start = min(dbs[analysis[0]].keys())
+#         end = max(dbs[analysis[0]].keys())
+#     else:
+#         start = datetime.strptime(start_date, "%d-%m-%Y")
+#         end = datetime.strptime(end_date, "%d-%m-%Y")
+    
+#     date_generated = [start + timedelta(days=x) for x in range(0, (end-start).days + 1)]
+    
+#     raster = gdal.Open(reference_raster)
+#     arr = raster.GetRasterBand(1).ReadAsArray()
+#     noval = raster.GetRasterBand(1).GetNoDataValue()
+    
+#     fig, [ax1, ax2] = plt.subplots(1, 2, figsize=(7,7))
+#     ims = []
+#     for date in date_generated:
+#         inner_arr = []
+#         for analysis, ax in zip(analyses, [ax1, ax2]):
+#             if analysis == 'CDA':
+#                 db_arr = np.array(db[date]['data'], dtype=np.float64)
+#                 db_arr[arr == noval] = np.nan
+#                 im = ax.imshow(db_arr, interpolation=None)
+#                 if date == start:
+#                     ax.imshow(db_arr, interpolation=None)  # show an initial one first
+#             else:
+#                 im = ax.imshow(dbs[analysis][date], interpolation=None, cmap = colors.ListedColormap(['C0', 'C3']))
+#                 if date == start:
+#                     ax.imshow(dbs[analysis][date], interpolation=None, cmap = colors.ListedColormap(['C0', 'C3']))  # show an initial one first
+#             title = ax.text(0.5, 1.03, analysis, size=15, 
+#                             # size=plt.rcParams["axes.titlesize"],
+#                             ha="center", transform=ax.transAxes, )
+#             text_date = plt.text(0.8, 0.05, date.strftime("%d/%m/%Y"),
+#                                  transform=fig.transFigure)
+#             inner_arr.append(im)
+#             inner_arr.append(title)
+#             inner_arr.append(text_date)
+    
+#         ims.append(inner_arr)
+    
+#     red_patch = mpatches.Patch(color='C3', label='Drought')
+#     blue_patch = mpatches.Patch(color='C0', label='No Drought')
+    
+#     fig.tight_layout()
+#     plt.subplots_adjust(top=0.85)
+    
+#     plt.legend(handles=[blue_patch, red_patch], loc = 'lower center', ncol=2,
+#                bbox_to_anchor=(0.5,0.03), bbox_transform=fig.transFigure)
+#     plt.subplots_adjust(bottom=0.13)
+#     plt.suptitle(variable.title().replace("_", " "), fontweight ="bold", size=20, y=0.95)
+    
+#     ani = animation.ArtistAnimation(fig, ims, interval=200, blit=True, repeat_delay=1000)
+#     print_start = start.strftime("%d_%m_%Y")
+#     print_end = end.strftime("%d_%m_%Y")
+#     ani.save(dst_path + "Animation_NCDA_CDA_" + variable + "_perc" + percentile + "_" + print_start + "_to_" + print_end + ".mp4", dpi=dpi)
+
+def RunoffVSPrecipitationGraphing(db_file_runoff, db_file_prec, cuencas_path,
+                                  rows, columns, cuencas_names, dst_path=None, dpi=600):
+
+    cuencas_ras = gdal.Open(cuencas_path)
+    cuencas_arr = cuencas_ras.GetRasterBand(1).ReadAsArray()
+    noval = cuencas_ras.GetRasterBand(1).GetNoDataValue()
+    [no_rows, no_columns] = cuencas_arr.shape
+    
+    with open(db_file_runoff, 'rb') as handle:
+        db_runoff = pickle.load(handle) 
+    with open(db_file_prec, 'rb') as handle:
+        db_prec = pickle.load(handle) 
+    
+    months = [i for i in range(12)]
+    
+    for row, column, cuenca in zip(rows, columns, cuencas_names):
+        
+        new_cuenca = np.full((no_rows, no_columns), np.nan)
+        if cuenca == 1 or cuenca == 3:
+            new_cuenca[cuencas_arr == cuenca] = 1
+        elif cuenca == 2:
+            new_cuenca[(cuencas_arr == cuenca) | (cuencas_arr == 1)] = 1
+        elif cuenca == 4:
+            new_cuenca[cuencas_arr != noval] = 1
+        
+        monthly_value_runoff = []
+        monthly_value_prec = []
+    
+        for month in months:
+            monthly_arr_runoff = []
+            monthly_arr_prec = []
+            months_num_arr = [i for i in range(month, db_runoff['data'].shape[2], 12)]
+            for m in months_num_arr:
+                monthly_arr_runoff.append(db_runoff['data'][row, column, m])
+                zone_mask = new_cuenca == 1
+                monthly_arr_prec.append(np.mean(db_prec['data'][:, :, m][zone_mask]))
+            
+            monthly_value_runoff.append(np.mean(monthly_arr_runoff))
+            monthly_value_prec.append(np.mean(monthly_arr_prec))
+            
+        m1_t = pd.DataFrame({
+             'runoff' : monthly_value_runoff,
+             'prec' : monthly_value_prec})
+        
+        fig = plt.figure(figsize=(10,4))
+        width = .5 # width of a bar
+        
+        ax1 = m1_t['runoff'].plot(rot=0, label='Runoff', style='r', zorder=10)    
+        ax2 = m1_t['prec'].plot(kind='bar', width = width, secondary_y=True, rot=0,
+                                label='Precipitation', zorder=1)
+        
+        ax1.set_ylabel('Runoff [m3/s]')
+        ax1.legend('Runoff')
+        ax2.set_ylabel('Precipitation [mm]')
+        ax2.legend('Precipitation')
+        ax1.set_xlabel('Months')
+        
+        title = "Runoff Vs. Precipitation in cell r" + str(row) + "c" + str(column)
+        plt.title(title, pad=30, fontsize=20)
+        
+        plt.tight_layout() 
+        
+        handles,labels = [],[]
+        for ax in fig.axes:
+            for h,l in zip(*ax.get_legend_handles_labels()):
+                handles.append(h)
+                labels.append(l)
+        
+        plt.legend(handles,labels)
+
+        ax = plt.gca()
+        plt.xlim([-width, len(m1_t['runoff'])-width])
+        ax.set_xticklabels(('J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'))
+        
+        if dst_path != None:
+            plt.savefig(dst_path + "Graph_analysis_runoff_vs_precipitation_in_r" + str(row) + "c" + str(column) + ".pdf", dpi=dpi, bbox_inches='tight')
+
+        plt.show()

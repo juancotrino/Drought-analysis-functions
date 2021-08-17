@@ -58,7 +58,7 @@ def RastersToDataBase(start_date, end_date, variable, src_filepath,
             acc_daily += raster_array
         else:
             acc_daily += raster_array
-            db_monthly['data'][:, :, m] = acc_daily
+            db_monthly['data'][:, :, m] = acc_daily / date.day
             acc_daily = np.full((no_rows, no_columns), 0).astype(np.float64)
             m += 1
         
@@ -310,6 +310,8 @@ def DroughtEvents(db, threshold=-1):
     
     for row in range(no_rows):
         for column in range(no_columns):
+            if row == 142 and column == 53:
+                print('para')
             value_array = np.array(sdi_events[row, column, :])
             value_array[np.isinf(value_array)] = 0
             value_array[np.isneginf(value_array)] = 0
